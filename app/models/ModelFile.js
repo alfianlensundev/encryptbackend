@@ -1,10 +1,13 @@
 const mongoose = require('mongoose')
 const { typeHelper } = require('../helpers/ModelHelper')
 
-const authSchema = new mongoose.Schema({
+const fileSchema = new mongoose.Schema({
+    user_id: typeHelper(String, ''),
+    subject: typeHelper(String, ''),
     file_name: typeHelper(String, ''),
     file_extension: typeHelper(String, ''),
     file_size: typeHelper(Number, 0),
+    mime_type: typeHelper(String, ''),
     encrypt_status: typeHelper(Number, 0),
     secret_key: typeHelper(String, ''),
     public_key: typeHelper(String, ''),
@@ -16,4 +19,4 @@ const authSchema = new mongoose.Schema({
     versionKey: false
 })
 
-exports.modelAuth = mongoose.model('files', authSchema, 'files')
+exports.modelFile = mongoose.model('files', fileSchema, 'files')
