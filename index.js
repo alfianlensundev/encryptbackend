@@ -6,7 +6,7 @@ const fastify = require('fastify')({ logger: false })
 
 fastify.register(require("fastify-multipart"));
 fastify.register(require('fastify-static'), {
-    root: path.join(appDir, 'files')
+    root: path.join(appDir, 'files'),
   })
   
 fastify.register(require('fastify-cors'), { 

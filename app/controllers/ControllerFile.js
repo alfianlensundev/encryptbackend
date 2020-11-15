@@ -32,11 +32,12 @@ exports.uploadFile = async function(req, reply){
     try {
         const timestamp = Math.floor(Date.now() / 1000)
         const data = await req.file()
+        const userid = data.fields.userId.value
         if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
-        if (!fs.existsSync(path.join(appDir, 'files',  data.fields.userId.value))) await fs.mkdirSync(path.join(appDir, 'files',  data.fields.userId.value))
+        if (!fs.existsSync(path.join(appDir, 'files',  userid))) await fs.mkdirSync(path.join(appDir, 'files',  userid))
         
         const fileSize = data.file._readableState['length']
-        await pump(data.file, fs.createWriteStream(path.join(appDir, 'files', data.fields.userId.value ,timestamp+'.'+data.filename.split('.').pop())))
+        await pump(data.file, fs.createWriteStream(path.join(appDir, 'files', userid ,timestamp+'.'+data.filename.split('.').pop())))
         return {
             code: 200,
             message: 'OK',
