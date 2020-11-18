@@ -35,9 +35,10 @@ exports.uploadFile = async function(req, reply){
         const userid = data.fields.userId.value
         if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
         if (!fs.existsSync(path.join(appDir, 'files',  userid))) await fs.mkdirSync(path.join(appDir, 'files',  userid))
+        if (!fs.existsSync(path.join(appDir, 'files',  userid, 'decrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userid, 'decrypted'))
         
         const fileSize = data.file._readableState['length']
-        await pump(data.file, fs.createWriteStream(path.join(appDir, 'files', userid ,timestamp+'.'+data.filename.split('.').pop())))
+        await pump(data.file, fs.createWriteStream(path.join(appDir, 'files', userid, 'decrypted',timestamp+'.'+data.filename.split('.').pop())))
         return {
             code: 200,
             message: 'OK',
@@ -56,29 +57,35 @@ exports.uploadFile = async function(req, reply){
 exports.encryptAndSaveFile = async function(req, reply){
     try {
         const {userId, subject,fileDetail} = req.body
+        const begin = Date.now();
         const key = new NodeRSA({b: 512});
-        console.log(req.body)
-        const file = await readFile(path.join(appDir, 'files', userId, fileDetail.fileName))
+        if (!fs.existsSync(path.join(appDir, 'files',  userId, 'encrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userId, 'encrypted'))
+        const file = await readFile(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
         const base64file = file.toString('base64')
         
         const encrypted = key.encrypt(base64file, 'base64')
-        await unlink(path.join(appDir, 'files', userId, fileDetail.fileName))
-        await createFile(path.join(appDir, 'files', userId, fileDetail.fileName+'.txt'), encrypted)
+        
+        await createFile(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName+'.txt'), encrypted)
+        const end = Date.now();
+        const timeSpent =(end-begin)/1000;
 
         await modelFile.create({
             user_id: userId,
-            subject,
+            subject: subject.trim().length > 0 ? subject : fileDetail.fileName,
             file_name: fileDetail.fileName,
             file_extension: fileDetail.extension,
             mime_type: fileDetail.mimeType,
             file_size: fileDetail.fileSize,
             encrypt_status: 1,
+            time_encryption: timeSpent,
             secret_key: '',
             public_key: '',
             secret_key_path: '',
             public_key_path: ''
         })
+        
 
+        
         return {
             code: 200,
             message: 'OK',

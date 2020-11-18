@@ -1,6 +1,9 @@
 const bcrypt = require("bcrypt")
 const { sendError } = require("../helpers/GeneralHelper")
 const { modelAuth } = require("../models/ModelAuth")
+const fs = require('fs')
+const path = require('path')
+const appDir = path.dirname(require.main.filename)
 
 exports.login = async function(req, reply){
     try {
@@ -89,11 +92,16 @@ exports.signUp = async function(req, reply){
             }
         }
 
-        await modelAuth.create({
+        const user = await modelAuth.create({
             email,
             full_name: fullname,
             password: bcrypt.hashSync(password , 10)  
         })
+
+        if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
+        if (!fs.existsSync(path.join(appDir, 'files',  user._id.toString()))) await fs.mkdirSync(path.join(appDir, 'files',  user._id.toString()))
+        if (!fs.existsSync(path.join(appDir, 'files',  user._id.toString(), 'encrypt'))) await fs.mkdirSync(path.join(appDir, 'files',  user._id.toString(),'encrypt'))
+        if (!fs.existsSync(path.join(appDir, 'files',  user._id.toString(), 'decrypt'))) await fs.mkdirSync(path.join(appDir, 'files',  user._id.toString(),'decrypt'))
 
         return {
             code: 200,
@@ -104,6 +112,7 @@ exports.signUp = async function(req, reply){
             }
         }
     } catch(err){
+        console.log(err)
         sendError(reply, err.message)
     }
 }
