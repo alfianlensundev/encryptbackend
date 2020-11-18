@@ -10,7 +10,8 @@ const createFile = util.promisify(fs.writeFile)
 const unlink = util.promisify(fs.unlink)
 const NodeRSA = require('node-rsa');
 const { modelFile } = require("../models/ModelFile");
-const { typeHelper } = require("../helpers/ModelHelper");
+const officegen = require('officegen')
+const mammoth = require("mammoth");
 
 exports.getAllFile = async function (req, reply){
     try {
@@ -32,7 +33,8 @@ exports.uploadFile = async function(req, reply){
     try {
         const timestamp = Math.floor(Date.now() / 1000)
         const data = await req.file()
-        const userid = data.fields.userId.value
+        const userid = '5fb3e51d1a77b57245f3949e'
+        // const userid = data.fields.userId.value
         if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
         if (!fs.existsSync(path.join(appDir, 'files',  userid))) await fs.mkdirSync(path.join(appDir, 'files',  userid))
         if (!fs.existsSync(path.join(appDir, 'files',  userid, 'decrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userid, 'decrypted'))
@@ -50,6 +52,7 @@ exports.uploadFile = async function(req, reply){
             }
         }
     } catch(err){
+        console.log(err)
         sendError(reply, err.message)
     }
 }
@@ -60,14 +63,17 @@ exports.encryptAndSaveFile = async function(req, reply){
         const begin = Date.now();
         const key = new NodeRSA({b: 512});
         if (!fs.existsSync(path.join(appDir, 'files',  userId, 'encrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userId, 'encrypted'))
-        const file = await readFile(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
-        const base64file = file.toString('base64')
-        
-        const encrypted = key.encrypt(base64file, 'base64')
-        
-        await createFile(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName+'.txt'), encrypted)
+        // const file = await readFile(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
+        // const base64file = file.toString('base64')
+        const result = await mammoth.convertToHtml({path: path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName)})
+        const encrypted = key.encrypt(result.value, 'base64')
         const end = Date.now();
         const timeSpent =(end-begin)/1000;
+        let docx = officegen('docx')
+        let paragraph = docx.createP()
+        paragraph.addText(encrypted)
+        let out = fs.createWriteStream(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName))
+        docx.generate(out)
 
         await modelFile.create({
             user_id: userId,
@@ -83,8 +89,6 @@ exports.encryptAndSaveFile = async function(req, reply){
             secret_key_path: '',
             public_key_path: ''
         })
-        
-
         
         return {
             code: 200,
@@ -117,8 +121,8 @@ exports.deleteFile = async function(req, reply){
 exports.downloadFile = async function(req, reply){
     try {
         const file = await modelFile.findOne({_id: req.params.fileId})
-        let filename = req.params.encrypt === '1' ? file.file_name+'.txt' : file.file_name
-        reply.sendFile(path.join(file.user_id, filename))
+        let filename = req.params.encrypt === '1' ? file.file_name : file.file_name
+        reply.sendFile(path.join(file.user_id, 'encrypted',filename))
     } catch(err){
         sendError(reply, err.message)
     }
