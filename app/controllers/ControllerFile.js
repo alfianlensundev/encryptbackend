@@ -32,23 +32,24 @@ exports.getAllFile = async function (req, reply){
 exports.uploadFile = async function(req, reply){
     try {
         const timestamp = Math.floor(Date.now() / 1000)
-        const data = await req.file()
-        const userid = '5fb3e51d1a77b57245f3949e'
-        // const userid = data.fields.userId.value
+        const userid = req.body.userId.value
+        
         if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
         if (!fs.existsSync(path.join(appDir, 'files',  userid))) await fs.mkdirSync(path.join(appDir, 'files',  userid))
         if (!fs.existsSync(path.join(appDir, 'files',  userid, 'decrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userid, 'decrypted'))
+        const buffer = await req.body.file.toBuffer()
         
-        const fileSize = data.file._readableState['length']
-        await pump(data.file, fs.createWriteStream(path.join(appDir, 'files', userid, 'decrypted',timestamp+'.'+data.filename.split('.').pop())))
+        await fs.writeFileSync(path.join(appDir, 'files', userid, 'decrypted',timestamp+'.'+req.body.file.filename.split('.').pop()), buffer.toString('base64'), 'base64')
+        const stats = await fs.statSync(path.join(appDir, 'files', userid, 'decrypted',timestamp+'.'+req.body.file.filename.split('.').pop()))
+        
         return {
             code: 200,
             message: 'OK',
             data: {
-                extension: data.filename.split('.').pop(),
-                fileName: timestamp+'.'+data.filename.split('.').pop(),
-                mimeType: data.mimetype,
-                fileSize
+                extension:req.body.file.filename.split('.').pop(),
+                fileName: timestamp+'.'+req.body.file.filename.split('.').pop(),
+                mimeType: req.body.file.mimetype,
+                fileSize: stats.size,
             }
         }
     } catch(err){
@@ -63,9 +64,9 @@ exports.encryptAndSaveFile = async function(req, reply){
         const begin = Date.now();
         const key = new NodeRSA({b: 512});
         if (!fs.existsSync(path.join(appDir, 'files',  userId, 'encrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userId, 'encrypted'))
-        // const file = await readFile(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
-        // const base64file = file.toString('base64')
+
         const result = await mammoth.convertToHtml({path: path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName)})
+
         const encrypted = key.encrypt(result.value, 'base64')
         const end = Date.now();
         const timeSpent =(end-begin)/1000;

@@ -4,7 +4,7 @@ const path = require('path')
 const appDir = path.dirname(require.main.filename);
 const fastify = require('fastify')({ logger: false })
 
-fastify.register(require("fastify-multipart"));
+fastify.register(require("fastify-multipart"), {attachFieldsToBody: true});
 fastify.register(require('fastify-static'), {
     root: path.join(appDir, 'files'),
   })
