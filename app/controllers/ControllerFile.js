@@ -4,25 +4,45 @@ const appDir = path.dirname(require.main.filename);
 const fs = require('fs')
 const util = require('util')
 const { pipeline } = require('stream')
-const pump = util.promisify(pipeline)
-const readFile = util.promisify(fs.readFile) 
-const createFile = util.promisify(fs.writeFile)
-const unlink = util.promisify(fs.unlink)
+// const pump = util.promisify(pipeline)
+// const readFile = util.promisify(fs.readFile) 
+// const createFile = util.promisify(fs.writeFile)
+// const unlink = util.promisify(fs.unlink)
 const NodeRSA = require('node-rsa');
 const { modelFile } = require("../models/ModelFile");
 const officegen = require('officegen')
 const mammoth = require("mammoth");
+const HTMLtoDOCX = require('html-to-docx')
+const key = new NodeRSA({b: 512});
+
 
 exports.getAllFile = async function (req, reply){
     try {
         const {query} = req
-        
-        const listFile = await modelFile.find({flag_active: 1}).lean()
+        let where = {
+            flag_active: 1,
+            user_id: req.query.userid,
+            encrypt_status: query.encrypted
+        }
+        const listFile = await modelFile.find(where).lean()
 
         return {
             status: 200,
             message: "OK",
             data: listFile
+        }
+    } catch(err){
+        console.log(err)
+        sendError(reply, err.message)
+    }
+}
+
+exports.getAllFolder = async function (req, reply){
+    try {
+        const listFile = await modelFile.find(where).lean()
+        let folder = []
+        for (const file of listFile){
+            
         }
     } catch(err){
         sendError(reply, err.message)
@@ -58,16 +78,115 @@ exports.uploadFile = async function(req, reply){
     }
 }
 
+exports.uploadFileDec = async function(req, reply){
+    try {
+        const timestamp = Math.floor(Date.now() / 1000)
+        const userid = req.body.userId.value
+        
+        if (!fs.existsSync(path.join(appDir, 'files'))) await fs.mkdirSync(path.join(appDir, 'files'))
+        if (!fs.existsSync(path.join(appDir, 'files',  userid))) await fs.mkdirSync(path.join(appDir, 'files',  userid))
+        if (!fs.existsSync(path.join(appDir, 'files',  userid, 'temp_encrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userid, 'temp_encrypted'))
+        const buffer = await req.body.file.toBuffer()
+        await fs.writeFileSync(path.join(appDir, 'files', userid, 'temp_encrypted',timestamp+'.'+req.body.file.filename.split('.').pop()), buffer.toString('base64'), 'base64')
+        return {
+            code: 200,
+            message: 'OK',
+            data: {
+                extension:req.body.file.filename.split('.').pop(),
+                mimeType: req.body.file.mimetype,
+                fileName: timestamp+'.'+req.body.file.filename.split('.').pop(),
+            }
+        }
+    } catch(err){
+        console.log(err)
+        sendError(reply, err.message)
+    }
+}
+
+exports.decryptFile = async function(req, reply){
+    try {
+        const {userId,fileDetail} = req.body
+        const private_key = await fs.readFileSync(path.join(appDir, 'files', userId , 'key', 'private.txt')).toString('utf-8')
+        const private = new NodeRSA(private_key)
+
+        const file = await mammoth.extractRawText({path: path.join(appDir, 'files',userId, 'temp_encrypted',fileDetail.fileName)})
+        const begin = Date.now();
+        const decrypted = private.decrypt(file.value.trim(), 'utf8')
+
+        const data = decrypted.split('decID=>')
+        const end = Date.now();
+
+        const timeSpent =(end-begin)/1000;
+
+        if (data.length == 0){
+            return {
+                code: 201,
+                message: 'Invalid File',
+                data: null
+            }
+        }
+        const [ID = '', fileName = ''] = data[data.length-1].split('-')
+
+        const {_id, date_created, flag_active,...rest} = await modelFile.findOne({user_id: ID, file_name: fileName}).lean()
+        rest.encrypt_status = 0
+        rest.time_decryption= timeSpent
+    
+        return {
+            code: 200,
+            message: 'OK',
+            data: {
+                ID,
+                fileName,
+                files: rest
+            }
+        }
+    } catch(err){
+        console.log(err)
+        sendError(reply, err.message)
+    }
+}
+
+
+exports.saveFileDecrypt = async function (req, reply){
+    try {
+        await modelFile.create(req.body.files)
+        return {
+            code: 200,
+            message: 'OK',
+            data: null
+        }
+    } catch(err){
+        console.log(err)
+        sendError(reply, err.message)
+    }
+}
+
+
 exports.encryptAndSaveFile = async function(req, reply){
     try {
         const {userId, subject,fileDetail} = req.body
         const begin = Date.now();
-        const key = new NodeRSA({b: 512});
+    
+
+        let public_key = key.exportKey('public')    
+        let private_key = key.exportKey('private')
+        
+        if (!fs.existsSync(path.join(appDir, 'files',  userId, 'key'))) await fs.mkdirSync(path.join(appDir, 'files',  userId, 'key'))
         if (!fs.existsSync(path.join(appDir, 'files',  userId, 'encrypted'))) await fs.mkdirSync(path.join(appDir, 'files',  userId, 'encrypted'))
+
+        if (fs.existsSync(path.join(appDir, 'files',  userId, 'key', 'private.txt'))){
+            public_key = await fs.readFileSync(path.join(appDir, 'files',  userId, 'key', 'public.txt')).toString('utf-8')
+            private_key = await fs.readFileSync(path.join(appDir, 'files',  userId, 'key', 'private.txt')).toString('utf-8')
+        } else {
+            await fs.writeFileSync(path.join(appDir, 'files',  userId, 'key', 'public.txt'), public_key)
+            await fs.writeFileSync(path.join(appDir, 'files',  userId, 'key', 'private.txt'),  private_key)
+        }
+
+        const public = new NodeRSA(public_key)
 
         const result = await mammoth.convertToHtml({path: path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName)})
 
-        const encrypted = key.encrypt(result.value, 'base64')
+        const encrypted = public.encrypt(`${result.value}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
         const end = Date.now();
         const timeSpent =(end-begin)/1000;
         let docx = officegen('docx')
@@ -94,17 +213,13 @@ exports.encryptAndSaveFile = async function(req, reply){
         return {
             code: 200,
             message: 'OK',
-            data: {
-                test: ''
-            }
+            data: null
         }
     } catch(err){
         console.log(err)
         sendError(reply, err.message)
     }
 }
-
-
 
 exports.deleteFile = async function(req, reply){
     try {
@@ -122,8 +237,8 @@ exports.deleteFile = async function(req, reply){
 exports.downloadFile = async function(req, reply){
     try {
         const file = await modelFile.findOne({_id: req.params.fileId})
-        let filename = req.params.encrypt === '1' ? file.file_name : file.file_name
-        reply.sendFile(path.join(file.user_id, 'encrypted',filename))
+        let folder = req.params.encrypt === '1' ? 'encrypted' : 'decrypted'
+        reply.sendFile(path.join(file.user_id, folder,file.file_name))
     } catch(err){
         sendError(reply, err.message)
     }
