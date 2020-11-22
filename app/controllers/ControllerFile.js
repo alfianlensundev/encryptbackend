@@ -13,8 +13,58 @@ const { modelFile } = require("../models/ModelFile");
 const officegen = require('officegen')
 const mammoth = require("mammoth");
 const HTMLtoDOCX = require('html-to-docx')
+const moment = require('moment')
 const key = new NodeRSA({b: 512});
 
+exports.getHistoryDashboard = async function(req, reply){
+    try {
+        const dec = await modelFile.find({flag_active: 1, encrypt_status: 0}, null, {date_created: -1}).limit(5)
+        const enc = await modelFile.find({flag_active: 1, encrypt_status: 1}, null, {date_created: -1}).limit(5)
+
+        
+
+        return {
+            status: 200,
+            message: 'OK',
+            data: {
+                listDec: dec,
+                listEnc: enc
+            }
+        }
+    } catch(err){
+        sendError(reply, err.message)
+    }
+}
+
+
+exports.getDashboardExt = async function(req, reply){
+    try {
+        const listfile = await modelFile.find({flag_active: 1, user_id: req.params.userId})
+
+        let ext = {}
+        for (const file of listfile){
+            console.log(file.file_extension)
+            if (ext[file.file_extension] !== undefined){
+                ext[file.file_extension] = ext[file.file_extension]+1
+            } else {
+                ext[file.file_extension] = 1
+            }
+        }
+
+        
+        return {
+            status: 200,
+            message: 'OK',
+            data: Object.keys(ext).map(item => ({
+                ext: item,
+                total: ext[item],
+                persent: (ext[item]/listfile.length)*100
+            }))
+        }
+    } catch(err){
+        sendError(reply, err.message)   
+    }
+} 
 
 exports.getAllFile = async function (req, reply){
     try {
@@ -32,7 +82,6 @@ exports.getAllFile = async function (req, reply){
             data: listFile
         }
     } catch(err){
-        console.log(err)
         sendError(reply, err.message)
     }
 }
@@ -42,7 +91,15 @@ exports.getAllFolder = async function (req, reply){
         const listFile = await modelFile.find(where).lean()
         let folder = []
         for (const file of listFile){
-            
+            folder.push(file.date_created)
+        }
+
+        folder.unique()
+
+        return {
+            status: 200,
+            message: "OK",
+            data: folder
         }
     } catch(err){
         sendError(reply, err.message)

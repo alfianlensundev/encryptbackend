@@ -1,6 +1,6 @@
 const { default: fastify } = require("fastify");
 const { login, signUp, getAllUser, validateUser } = require("../controllers/ControllerAuth");
-const { getAllFile, uploadFile, encryptAndSaveFile, deleteFile, downloadFile, decryptFile, uploadFileDec, saveFileDecrypt } = require("../controllers/ControllerFile");
+const { getAllFile, uploadFile, encryptAndSaveFile, deleteFile, downloadFile, decryptFile, uploadFileDec, saveFileDecrypt, getDashboardExt, getHistoryDashboard } = require("../controllers/ControllerFile");
 
 exports.routeAuth = async (fastify, option) => {
     fastify.post('/login', login)
@@ -11,6 +11,9 @@ exports.routeAuth = async (fastify, option) => {
 
 exports.routeFile = async (fastify, option) => {
     fastify.get('/', getAllFile)
+    fastify.get('/folder', getAllFile)
+    fastify.get('/dashboard/ext/:userId', getDashboardExt)
+    fastify.get('/dashboard/:userId', getHistoryDashboard)
     fastify.delete('/:fileId', deleteFile)
     fastify.get('/download/:fileId/:encrypt', downloadFile)
     fastify.put('/upload',  uploadFile)
