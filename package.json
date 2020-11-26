@@ -9,7 +9,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "babel-polyfill": "^6.26.0",
     "bcrypt": "^5.0.0",
     "excel4node": "^1.7.2",
     "fastify": "^3.6.0",
