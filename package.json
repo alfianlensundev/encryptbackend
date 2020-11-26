@@ -16,20 +16,15 @@
     "fastify-cors": "^4.1.0",
     "fastify-multipart": "^3.3.0",
     "fastify-static": "^3.3.0",
-    "html-to-docx": "^1.1.31",
-    "is-electron": "^2.2.0",
-    "jquery-node": "^0.3.0",
     "mammoth": "^1.4.14",
     "moment": "^2.29.1",
     "mongoose": "^5.10.11",
-    "node-pptx": "^1.0.0",
     "node-rsa": "^1.1.1",
     "node-xlsx": "^0.15.0",
     "officegen": "^0.6.4",
     "pdf-extract": "^1.0.11",
     "pdf-parse": "^1.1.1",
     "pdf-to-text": "^0.0.7",
-    "pdfkit": "^0.11.0",
-    "pptxgenjs": "^3.3.1"
+    "pdfkit": "^0.11.0"
   }
 }
