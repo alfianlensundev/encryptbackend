@@ -8,20 +8,23 @@ const { pipeline } = require('stream')
 // const readFile = util.promisify(fs.readFile) 
 // const createFile = util.promisify(fs.writeFile)
 // const unlink = util.promisify(fs.unlink)
+const bcrypt  = require('bcrypt')
 const NodeRSA = require('node-rsa');
 const { modelFile } = require("../models/ModelFile");
 const officegen = require('officegen')
 const mammoth = require("mammoth");
-const HTMLtoDOCX = require('html-to-docx')
+const xlsx = require('node-xlsx')
+const xl = require('excel4node')
 const moment = require('moment')
+const pdfprs = require('pdf-parse');
+const PDFDocument = require('pdfkit');
+const pptxgen = require('pptxgenjs');
 const key = new NodeRSA({b: 512});
 
 exports.getHistoryDashboard = async function(req, reply){
     try {
-        const dec = await modelFile.find({flag_active: 1, encrypt_status: 0}, null, {date_created: -1}).limit(5)
-        const enc = await modelFile.find({flag_active: 1, encrypt_status: 1}, null, {date_created: -1}).limit(5)
-
-        
+        const dec = await modelFile.find({flag_active: 1, encrypt_status: 0}, null, {sort: {date_created: -1}}).limit(2)
+        const enc = await modelFile.find({flag_active: 1, encrypt_status: 1}, null, {sort: {date_created: -1}}).limit(2)
 
         return {
             status: 200,
@@ -74,7 +77,7 @@ exports.getAllFile = async function (req, reply){
             user_id: req.query.userid,
             encrypt_status: query.encrypted
         }
-        const listFile = await modelFile.find(where).lean()
+        const listFile = await modelFile.find(where, null, {sort: {date_created: -1}}).lean()
 
         return {
             status: 200,
@@ -88,18 +91,15 @@ exports.getAllFile = async function (req, reply){
 
 exports.getAllFolder = async function (req, reply){
     try {
-        const listFile = await modelFile.find(where).lean()
-        let folder = []
+        const listFile = await modelFile.find({user_id:req.params.userId}).lean()
+        let folder = {}
         for (const file of listFile){
-            folder.push(file.date_created)
+            folder[moment(file.date_created).format("YYYY-MM-DD")] = []
         }
-
-        folder.unique()
-
         return {
             status: 200,
             message: "OK",
-            data: folder
+            data: Object.keys(folder).map(tgl => tgl).reverse()
         }
     } catch(err){
         sendError(reply, err.message)
@@ -160,20 +160,82 @@ exports.uploadFileDec = async function(req, reply){
     }
 }
 
+
+// decrypt file
+async function wordDec(begin,private, fileDetail, userId){
+    const file = await mammoth.extractRawText({path: path.join(appDir, 'files',userId, 'temp_encrypted',fileDetail.fileName)})
+    const decrypted = private.decrypt(file.value.trim(), 'utf8')
+
+    const data = decrypted.split('decID=>')
+    const end = Date.now();
+
+    const timeSpent =(end-begin)/1000;
+
+    return {
+        data,
+        timeSpent
+    }
+}
+
+async function excelDec(begin,private, fileDetail, userId){
+    const result = xlsx.parse(path.join(appDir, 'files',userId, 'temp_encrypted',fileDetail.fileName));
+    const text = result[0].data[0][0]
+    const decrypted = private.decrypt(text, 'utf8')
+
+    const data = decrypted.split('decID=>')
+    const end = Date.now();
+
+    const timeSpent =(end-begin)/1000;
+
+    return {
+        data,
+        timeSpent
+    }
+}
+
+async function pdfDec(begin,private, fileDetail, userId){
+    const dataBuffer = await fs.readFileSync(path.join(appDir, 'files',userId, 'temp_encrypted',fileDetail.fileName))
+    const result = await pdfprs(dataBuffer)
+
+    console.log(result.text)
+    const text = result.text
+    const decrypted = private.decrypt(text, 'utf8')
+    const data = decrypted.split('decID=>')
+    const end = Date.now();
+
+    const timeSpent =(end-begin)/1000;
+
+    return {
+        data,
+        timeSpent
+    }
+}
+
+// end decrypt file
+
 exports.decryptFile = async function(req, reply){
     try {
         const {userId,fileDetail} = req.body
         const private_key = await fs.readFileSync(path.join(appDir, 'files', userId , 'key', 'private.txt')).toString('utf-8')
         const private = new NodeRSA(private_key)
-
-        const file = await mammoth.extractRawText({path: path.join(appDir, 'files',userId, 'temp_encrypted',fileDetail.fileName)})
         const begin = Date.now();
-        const decrypted = private.decrypt(file.value.trim(), 'utf8')
+        let result = null
+        switch (fileDetail.extension) {
+            case 'docx':
+                result = await wordDec(begin,private, fileDetail, userId)
+                break;
+            case 'xlsx': 
+                result = await excelDec(begin,private, fileDetail, userId)
+                break;
+            case 'pdf': 
+                result = await pdfDec(begin,private, fileDetail, userId)
+                break;
+            default:
+                break;
+        }
 
-        const data = decrypted.split('decID=>')
-        const end = Date.now();
+        const {timeSpent, data} = result
 
-        const timeSpent =(end-begin)/1000;
 
         if (data.length == 0){
             return {
@@ -193,12 +255,34 @@ exports.decryptFile = async function(req, reply){
             message: 'OK',
             data: {
                 ID,
+                _id,
                 fileName,
                 files: rest
             }
         }
     } catch(err){
         console.log(err)
+        sendError(reply, err.message)
+    }
+}
+
+exports.validateDecrypt = async function (req, reply){
+    try {
+        const file = await modelFile.findOne({_id: req.body._id}).lean()
+        if (bcrypt.compareSync(req.body.password, file.password)){
+            return {
+                code: 200,
+                message: "OK",
+                data: req.body
+            }
+        } else {
+            return {
+                code: 205,
+                message: 'Password Salah',
+                data: null
+            }
+        }
+    } catch(err){
         sendError(reply, err.message)
     }
 }
@@ -219,9 +303,79 @@ exports.saveFileDecrypt = async function (req, reply){
 }
 
 
+// encrypt decrypt
+async function word(begin, public, fileDetail, userId){
+    const result = await mammoth.convertToHtml({path: path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName)})
+    const encrypted = public.encrypt(`${result.value}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
+    const end = Date.now();
+    const timeSpent =(end-begin)/1000;
+    let docx = officegen('docx')
+    let paragraph = docx.createP()
+    paragraph.addText(encrypted)
+    let out = fs.createWriteStream(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName))
+    docx.generate(out)
+    return timeSpent
+}
+
+async function excel(begin, public, fileDetail, userId){
+    const result = xlsx.parse(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName));
+    const encrypted = public.encrypt(`${JSON.stringify(result)}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
+    const end = Date.now();
+    const timeSpent =(end-begin)/1000;
+    const wb = new xl.Workbook();
+    const ws = wb.addWorksheet('Sheet 1');
+    var style = wb.createStyle({
+        font: {
+          color: '#000',
+          size: 12
+        }
+    });
+
+    ws.cell(1, 1)
+        .string(encrypted)
+        .style(style);
+
+    const buffer = await wb.writeToBuffer()
+    await fs.writeFileSync(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName), buffer)
+    
+    return timeSpent
+}
+
+async function pdf(begin, public, fileDetail, userId){
+    const dataBuffer = await fs.readFileSync(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
+    const result = await pdfprs(dataBuffer)
+
+    const encrypted = public.encrypt(`${result.text}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
+    const end = Date.now();
+    const timeSpent =(end-begin)/1000;
+    const doc = new PDFDocument;
+    doc.pipe(fs.createWriteStream(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName)));
+    doc.text(encrypted, 10, 10)
+    doc.end()
+    return timeSpent
+}
+
+async function pptx(begin, public, fileDetail, userId){
+    const dataBuffer = await fs.readFileSync(path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName))
+
+    const encrypted = public.encrypt(`${dataBuffer.toString('base64')}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
+    const end = Date.now();
+    const timeSpent =(end-begin)/1000;
+    let pres = new pptxgen();
+    let slide = pres.addSlide();
+    let textboxOpts = { x: 1, y: 1, color: "363636" };
+    slide.addText(encrypted, textboxOpts)
+    pres.writeFile(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName))
+    return timeSpent
+}
+
+
+
+// end encrypt decrypt
+
 exports.encryptAndSaveFile = async function(req, reply){
     try {
-        const {userId, subject,fileDetail} = req.body
+        const {userId, subject,fileDetail, password} = req.body
         const begin = Date.now();
     
 
@@ -240,17 +394,24 @@ exports.encryptAndSaveFile = async function(req, reply){
         }
 
         const public = new NodeRSA(public_key)
-
-        const result = await mammoth.convertToHtml({path: path.join(appDir, 'files', userId, 'decrypted',fileDetail.fileName)})
-
-        const encrypted = public.encrypt(`${result.value}decID=>${userId}-${fileDetail.fileName}`, 'base64', 'utf-8')
-        const end = Date.now();
-        const timeSpent =(end-begin)/1000;
-        let docx = officegen('docx')
-        let paragraph = docx.createP()
-        paragraph.addText(encrypted)
-        let out = fs.createWriteStream(path.join(appDir, 'files',userId, 'encrypted',fileDetail.fileName))
-        docx.generate(out)
+        let timeSpent = null
+        switch (fileDetail.extension) {
+            case 'docx':
+                timeSpent = await word(begin,public, fileDetail, userId)
+                break;
+            case 'xlsx': 
+                timeSpent = await excel(begin,public, fileDetail, userId)
+                break;
+            case 'pdf': 
+                timeSpent = await pdf(begin,public, fileDetail, userId)
+                break;
+            case 'pptx': 
+                timeSpent = await pptx(begin,public, fileDetail, userId)
+                break;
+            default:
+                break;
+        }
+                
 
         await modelFile.create({
             user_id: userId,
@@ -260,6 +421,7 @@ exports.encryptAndSaveFile = async function(req, reply){
             mime_type: fileDetail.mimeType,
             file_size: fileDetail.fileSize,
             encrypt_status: 1,
+            password: bcrypt.hashSync(password , 10),
             time_encryption: timeSpent,
             secret_key: '',
             public_key: '',
@@ -285,6 +447,24 @@ exports.deleteFile = async function(req, reply){
             code: 200,
             message: 'OK',
             data: result
+        }
+    } catch(err){
+        sendError(reply, err.message)
+    }
+}
+
+exports.getFiles = async function (req, reply){
+    try {
+        const {tgl, userId} = req.params
+        const tglawal = tgl+' '+'00:00:00'
+        const tglakhir = tgl+' '+'23:59:59'
+
+        const data = await modelFile.find({flag_active: 1, date_created: {$gte: new Date(tglawal), $lte: new Date(tglakhir)}}, null, {sort: {date_created: -1}}).lean()
+        
+        return {
+            code: 200,
+            message: 'OK',
+            data: data.map(({password, ...rest}) => rest)
         }
     } catch(err){
         sendError(reply, err.message)

@@ -11,6 +11,7 @@ const fileSchema = new mongoose.Schema({
     encrypt_status: typeHelper(Number, 0),
     secret_key: typeHelper(String, ''),
     public_key: typeHelper(String, ''),
+    password: typeHelper(String, ''),
     time_encryption: typeHelper(mongoose.Decimal128, 0),
     time_decryption: typeHelper(mongoose.Decimal128, 0),
     secret_key_path: typeHelper(String, ''),
