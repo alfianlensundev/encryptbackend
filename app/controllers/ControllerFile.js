@@ -18,7 +18,7 @@ const xl = require('excel4node')
 const moment = require('moment')
 const pdfprs = require('pdf-parse');
 const PDFDocument = require('pdfkit');
-const pptxgen = require('pptxgenjs');
+// const pptxgen = require('pptxgenjs');
 const key = new NodeRSA({b: 512});
 
 exports.getHistoryDashboard = async function(req, reply){
@@ -464,7 +464,10 @@ exports.getFiles = async function (req, reply){
         return {
             code: 200,
             message: 'OK',
-            data: data.map(({password, ...rest}) => rest)
+            data: data.map(({password, ...rest}) => {
+                rest.file_name = rest.subject.trim().length > 0 ? rest.subject : rest.file_name
+                return rest
+            })
         }
     } catch(err){
         sendError(reply, err.message)
